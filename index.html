@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Taskmaster</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/components/login.css">
+    <link rel="stylesheet" href="css/components/tasks.css">
+</head>
+
+<body>
+    <div id="app">
+        <nav id="main-nav" class="hidden">
+            <div class="nav-content">
+                <span id="username-display"></span>
+                <button id="logout-btn">Logout</button>
+            </div>
+        </nav>
+        <main id="main-content"></main>
+    </div>
+
+    <!-- Laad scripts in de juiste volgorde -->
+    <script src="js/api.js"></script>
+    <script src="js/router.js"></script>
+    <script src="js/components/login.js"></script>
+    <script src="js/components/tasks.js"></script>
+    <script src="js/app.js"></script>
+</body>
+
+</html>
