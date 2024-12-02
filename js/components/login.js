@@ -43,6 +43,10 @@ const LoginComponent = {
                     <div class="error-message hidden"></div>
                     <button type="submit" class="btn-primary">Create Account</button>
                 </form>
+
+                <div class="login-footer">
+                    <button class="btn-secondary back-to-home">Back to Home</button>
+                </div>
             </div>
         `;
 
@@ -63,6 +67,14 @@ const LoginComponent = {
                 document.getElementById(formToShow).classList.remove('hidden');
             });
         });
+
+        // Back to home button
+        const backBtn = document.querySelector('.back-to-home');
+        if (backBtn) {
+            backBtn.addEventListener('click', () => {
+                Router.navigate('/');
+            });
+        }
 
         // Login form
         const loginForm = document.getElementById('login-form');

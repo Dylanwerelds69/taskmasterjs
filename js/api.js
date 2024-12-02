@@ -1,6 +1,6 @@
 const API = {
     BASE_URL: '/github/taskmasterjs/proxy.php?csurl=',
-    
+
     async request(endpoint, options = {}) {
         console.log('🌐 API Request:', {
             endpoint,
@@ -18,19 +18,62 @@ const API = {
                 ...options,
                 headers: { ...defaultHeaders, ...options.headers }
             });
-            
+
             const responseData = await response.json();
             console.log('📥 API Response:', responseData);
 
             if (!responseData.success) {
                 throw new Error(responseData.message || 'API request failed');
             }
-            
+
             return responseData;
         } catch (error) {
             console.error('❌ API Error:', error);
             throw error;
         }
+    },
+
+    async getTasks(page = 1) {
+        return this.request(`tasks/page/${page}`);
+    },
+
+    async getTask(id) {
+        return this.request(`tasks/${id}`);
+    },
+
+    async createTask(taskData) {
+        const formattedData = {
+            ...taskData,
+            deadline: this.formatDateForAPI(taskData.deadline),
+            completed: taskData.completed || 'N'
+        };
+
+        console.log('Creating task with data:', formattedData);
+
+        return this.request('tasks', {
+            method: 'POST',
+            body: JSON.stringify(formattedData)
+        });
+    },
+
+    async updateTask(id, taskData) {
+        const formattedData = {
+            ...taskData
+        };
+        if (taskData.deadline) {
+            formattedData.deadline = this.formatDateForAPI(taskData.deadline);
+        }
+
+        return this.request(`tasks/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify(formattedData)
+        });
+    },
+
+    async deleteTask(id) {
+        return this.request(`tasks/${id}`, {
+            method: 'DELETE'
+        });
     },
 
     async register(username, password, fullname) {
@@ -46,7 +89,7 @@ const API = {
 
     async login(username, password) {
         try {
-            const response = await this.request('sessions', {  // Correct endpoint
+            const response = await this.request('sessions', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -58,14 +101,12 @@ const API = {
             });
 
             console.log('Login response:', response);
-
             if (response.success && response.data) {
                 localStorage.setItem('accessToken', response.data.access_token);
                 localStorage.setItem('refreshToken', response.data.refresh_token);
                 localStorage.setItem('sessionId', response.data.session_id);
                 localStorage.setItem('username', username);
             }
-
             return response;
         } catch (error) {
             console.error('🚫 Login error:', error);
@@ -84,39 +125,22 @@ const API = {
                 console.error('Logout error:', error);
             }
         }
-        
         localStorage.removeItem('accessToken');
         localStorage.removeItem('refreshToken');
         localStorage.removeItem('sessionId');
         localStorage.removeItem('username');
     },
 
-    async getTasks(page = 1) {
-        return this.request(`tasks/page/${page}`);
-    },
-
-    async getTask(id) {
-        return this.request(`tasks/${id}`);
-    },
-
-    async createTask(taskData) {
-        return this.request('tasks', {
-            method: 'POST',
-            body: JSON.stringify(taskData)
-        });
-    },
-
-    async updateTask(id, taskData) {
-        return this.request(`tasks/${id}`, {
-            method: 'PATCH',
-            body: JSON.stringify(taskData)
-        });
-    },
-
-    async deleteTask(id) {
-        return this.request(`tasks/${id}`, {
-            method: 'DELETE'
-        });
+    formatDateForAPI(dateString) {
+        const date = new Date(dateString);
+        return date.toLocaleString('en-GB', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        }).replace(',', '');
     },
 
     isAuthenticated() {
