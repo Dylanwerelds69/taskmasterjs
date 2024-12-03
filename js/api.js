@@ -18,14 +18,12 @@ const API = {
                 ...options,
                 headers: { ...defaultHeaders, ...options.headers }
             });
-
             const responseData = await response.json();
             console.log('📥 API Response:', responseData);
 
             if (!responseData.success) {
                 throw new Error(responseData.message || 'API request failed');
             }
-
             return responseData;
         } catch (error) {
             console.error('❌ API Error:', error);
@@ -33,8 +31,19 @@ const API = {
         }
     },
 
-    async getTasks(page = 1) {
-        return this.request(`tasks/page/${page}`);
+    async getTasks(page = 1, filter = 'all') {
+        let endpoint;
+    
+        // Use different endpoints based on filter
+        if (filter === 'complete') {
+            endpoint = 'tasks/complete';
+        } else if (filter === 'incomplete') {
+            endpoint = 'tasks/incomplete';
+        } else {
+            endpoint = `tasks/page/${page}`;
+        }
+        
+        return this.request(endpoint);
     },
 
     async getTask(id) {
@@ -47,9 +56,7 @@ const API = {
             deadline: this.formatDateForAPI(taskData.deadline),
             completed: taskData.completed || 'N'
         };
-
         console.log('Creating task with data:', formattedData);
-
         return this.request('tasks', {
             method: 'POST',
             body: JSON.stringify(formattedData)
@@ -63,7 +70,6 @@ const API = {
         if (taskData.deadline) {
             formattedData.deadline = this.formatDateForAPI(taskData.deadline);
         }
-
         return this.request(`tasks/${id}`, {
             method: 'PATCH',
             body: JSON.stringify(formattedData)

@@ -1,5 +1,6 @@
 const TasksComponent = {
     currentPage: 1,
+    currentFilter: 'all',
 
     async render() {
         document.getElementById('main-nav').classList.remove('hidden');
@@ -62,7 +63,7 @@ const TasksComponent = {
 
     async loadTasks() {
         try {
-            const response = await API.getTasks(this.currentPage);
+            const response = await API.getTasks(this.currentPage, this.currentFilter);
             const taskList = document.querySelector('.task-list');
 
             if (!response.data.tasks.length) {
@@ -92,7 +93,12 @@ const TasksComponent = {
                 </div>
             `).join('');
 
-            this.renderPagination(response.data);
+            // Only show pagination for 'all' filter
+            if (this.currentFilter === 'all') {
+                this.renderPagination(response.data);
+            } else {
+                document.querySelector('.pagination').innerHTML = '';
+            }
         } catch (error) {
             console.error('Failed to load tasks:', error);
         }
@@ -126,7 +132,7 @@ const TasksComponent = {
             document.getElementById('task-title').value = task.title;
             document.getElementById('task-description').value = task.description;
             
-            // Parse and format the date (DD/MM/YYYY HH:mm to YYYY-MM-DDTHH:mm)
+            // Parse and format the date
             const [datePart, timePart] = task.deadline.split(' ');
             const [day, month, year] = datePart.split('/');
             const formattedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${timePart}`;
@@ -160,12 +166,23 @@ const TasksComponent = {
             });
         }
 
+        // Status filter
+        const statusFilter = document.getElementById('status-filter');
+        if (statusFilter) {
+            statusFilter.addEventListener('change', async (e) => {
+                const filterValue = e.target.value;
+                console.log('Filter changed to:', filterValue);
+                this.currentFilter = filterValue;
+                this.currentPage = 1; // Reset to first page
+                await this.loadTasks();
+            });
+        }
+
         // Task form submission
         const form = document.getElementById('task-form');
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
 
-            // Convert date from YYYY-MM-DDTHH:mm to DD/MM/YYYY HH:mm
             const dateInput = document.getElementById('task-deadline').value;
             const date = new Date(dateInput);
             const formattedDate = date.toLocaleString('en-GB', {
@@ -227,13 +244,6 @@ const TasksComponent = {
                     e.target.checked = !e.target.checked; // Revert checkbox if update failed
                 }
             }
-        });
-
-        // Status filter
-        document.getElementById('status-filter').addEventListener('change', async (e) => {
-            const status = e.target.value;
-            this.currentPage = 1; // Reset to first page when filtering
-            await this.loadTasks();
         });
     },
 
