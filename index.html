@@ -5,15 +5,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Taskmaster</title>
+
+    <!-- Web App Manifest -->
     <link rel="manifest" href="manifest.json">
+
+    <!-- CSS Files -->
     <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/components/home.css">
     <link rel="stylesheet" href="css/components/login.css">
     <link rel="stylesheet" href="css/components/tasks.css">
-    <link rel="stylesheet" href="css/components/home.css">
 </head>
 
 <body>
     <div id="app">
+        <!-- Navigation -->
         <nav id="main-nav" class="hidden">
             <div class="nav-content">
                 <a href="/" class="nav-logo">Taskmaster</a>
@@ -24,16 +29,74 @@
                 </div>
             </div>
         </nav>
+
+        <!-- Main Content -->
         <main id="main-content"></main>
+
+        <!-- Notification Container -->
+        <div id="notification-container"></div>
     </div>
 
-    <!-- Laad scripts in de juiste volgorde -->
+    <!-- Core Services - Load these first -->
+    <script src="js/db.js"></script>
     <script src="js/api.js"></script>
     <script src="js/router.js"></script>
+
+    <!-- Components - Load after services -->
     <script src="js/components/home.js"></script>
     <script src="js/components/login.js"></script>
     <script src="js/components/tasks.js"></script>
+
+    <!-- Main App - Load last -->
     <script src="js/app.js"></script>
+
+    <!-- Offline status indicator -->
+    <div id="offline-indicator" class="hidden">
+        You are currently offline. Changes will be saved locally.
+    </div>
+
+    <style>
+        #offline-indicator {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #333;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            z-index: 1000;
+            display: none;
+        }
+
+        #offline-indicator.visible {
+            display: block;
+        }
+
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 25px;
+            border-radius: 5px;
+            background: #333;
+            color: white;
+            z-index: 1000;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+    </style>
 </body>
 
 </html>

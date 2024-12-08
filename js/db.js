@@ -5,91 +5,135 @@ const DB = {
     async init() {
         return new Promise((resolve, reject) => {
             const request = indexedDB.open(this.DB_NAME, this.DB_VERSION);
-
+            
             request.onerror = () => reject(request.error);
             request.onsuccess = () => resolve(request.result);
-
+            
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
-
-                // Create tasks store
+                
+                // Create tasks store if it doesn't exist
                 if (!db.objectStoreNames.contains('tasks')) {
-                    const taskStore = db.createObjectStore('tasks', { keyPath: 'id' });
+                    const taskStore = db.createObjectStore('tasks', { 
+                        keyPath: 'id',
+                        autoIncrement: true 
+                    });
                     taskStore.createIndex('completed', 'completed', { unique: false });
-                    taskStore.createIndex('pendingSync', 'pendingSync', { unique: false });
+                    taskStore.createIndex('syncStatus', 'syncStatus', { unique: false });
                 }
 
-                // Create offline actions store
-                if (!db.objectStoreNames.contains('offlineActions')) {
-                    db.createObjectStore('offlineActions', {
-                        keyPath: 'id',
-                        autoIncrement: true
-                    });
+                // Create users store for offline login
+                if (!db.objectStoreNames.contains('users')) {
+                    const userStore = db.createObjectStore('users', { keyPath: 'username' });
+                    userStore.createIndex('lastLogin', 'lastLogin', { unique: false });
                 }
             };
         });
     },
 
-    async saveTaskLocally(task) {
+    async saveTask(task) {
         const db = await this.init();
         return new Promise((resolve, reject) => {
             const transaction = db.transaction(['tasks'], 'readwrite');
             const store = transaction.objectStore('tasks');
 
-            const request = store.add({
+            const taskToSave = {
                 ...task,
-                pendingSync: true,
-                timestamp: new Date().toISOString()
-            });
+                syncStatus: 'pending',
+                updatedAt: new Date().toISOString()
+            };
 
-            request.onsuccess = () => resolve(request.result);
+            const request = taskToSave.id ? store.put(taskToSave) : store.add(taskToSave);
+
+            request.onsuccess = () => {
+                resolve({
+                    success: true,
+                    data: {
+                        task: { ...taskToSave, id: request.result },
+                        message: 'Task saved offline'
+                    }
+                });
+            };
             request.onerror = () => reject(request.error);
         });
     },
 
-    async getOfflineTasks() {
+    async getAllTasks() {
         const db = await this.init();
         return new Promise((resolve, reject) => {
             const transaction = db.transaction(['tasks'], 'readonly');
             const store = transaction.objectStore('tasks');
-            const index = store.index('pendingSync');
+            const request = store.getAll();
 
-            const request = index.getAll(true);
-
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
-    },
-
-    async markTaskSynced(taskId) {
-        const db = await this.init();
-        return new Promise((resolve, reject) => {
-            const transaction = db.transaction(['tasks'], 'readwrite');
-            const store = transaction.objectStore('tasks');
-
-            const request = store.get(taskId);
             request.onsuccess = () => {
-                const task = request.result;
-                task.pendingSync = false;
-                store.put(task);
-                resolve();
+                resolve(request.result || []); // Return empty array if no tasks found
             };
             request.onerror = () => reject(request.error);
         });
     },
 
-    async saveOfflineAction(action) {
+    async getTask(id) {
         const db = await this.init();
         return new Promise((resolve, reject) => {
-            const transaction = db.transaction(['offlineActions'], 'readwrite');
-            const store = transaction.objectStore('offlineActions');
-
-            const request = store.add({
-                timestamp: new Date().toISOString(),
-                ...action
-            });
+            const transaction = db.transaction(['tasks'], 'readonly');
+            const store = transaction.objectStore('tasks');
+            const request = store.get(id);
 
             request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    },
+
+    async deleteTask(id) {
+        const db = await this.init();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(['tasks'], 'readwrite');
+            const store = transaction.objectStore('tasks');
+            const request = store.delete(id);
+
+            request.onsuccess = () => resolve(true);
+            request.onerror = () => reject(request.error);
+        });
+    },
+
+    async saveUser(userData) {
+        const db = await this.init();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(['users'], 'readwrite');
+            const store = transaction.objectStore('users');
+
+            const user = {
+                ...userData,
+                lastLogin: new Date().toISOString()
+            };
+
+            const request = store.put(user);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    },
+
+    async getUser(username) {
+        const db = await this.init();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(['users'], 'readonly');
+            const store = transaction.objectStore('users');
+            const request = store.get(username);
+
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    },
+
+    async getUnsynedTasks() {
+        const db = await this.init();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction(['tasks'], 'readonly');
+            const store = transaction.objectStore('tasks');
+            const index = store.index('syncStatus');
+            const request = index.getAll('pending');
+
+            request.onsuccess = () => resolve(request.result || []); // Return empty array if no tasks found
             request.onerror = () => reject(request.error);
         });
     }

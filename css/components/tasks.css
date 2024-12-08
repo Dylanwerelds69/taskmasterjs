@@ -186,3 +186,28 @@
     border-radius: 8px;
     font-size: 16px;
 }
+.offline-badge {
+    background-color: #ff9800;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    margin-top: 8px;
+    display: inline-block;
+}
+
+.task-item {
+    position: relative;
+}
+
+.task-item[data-offline="true"]::before {
+    content: "Offline";
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: #ff9800;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+}

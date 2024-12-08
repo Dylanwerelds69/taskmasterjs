@@ -2,6 +2,10 @@ const API = {
     BASE_URL: '/github/taskmasterjs/proxy.php?csurl=',
 
     async request(endpoint, options = {}) {
+        if (!navigator.onLine) {
+            throw new Error('No internet connection');
+        }
+
         console.log('🌐 API Request:', {
             endpoint,
             method: options.method || 'GET',
@@ -18,12 +22,14 @@ const API = {
                 ...options,
                 headers: { ...defaultHeaders, ...options.headers }
             });
+
             const responseData = await response.json();
             console.log('📥 API Response:', responseData);
 
             if (!responseData.success) {
                 throw new Error(responseData.message || 'API request failed');
             }
+            
             return responseData;
         } catch (error) {
             console.error('❌ API Error:', error);
@@ -32,97 +38,218 @@ const API = {
     },
 
     async getTasks(page = 1, filter = 'all') {
-        let endpoint;
-    
-        // Use different endpoints based on filter
-        if (filter === 'complete') {
-            endpoint = 'tasks/complete';
-        } else if (filter === 'incomplete') {
-            endpoint = 'tasks/incomplete';
-        } else {
-            endpoint = `tasks/page/${page}`;
+        try {
+            if (!navigator.onLine) {
+                const tasks = await DB.getAllTasks();
+                return {
+                    success: true,
+                    data: {
+                        tasks: this.filterTasks(tasks, filter),
+                        total_pages: 1,
+                        has_next_page: false,
+                        has_previous_page: false
+                    }
+                };
+            }
+
+            let endpoint;
+            if (filter === 'complete') {
+                endpoint = 'tasks/complete';
+            } else if (filter === 'incomplete') {
+                endpoint = 'tasks/incomplete';
+            } else {
+                endpoint = `tasks/page/${page}`;
+            }
+            
+            const response = await this.request(endpoint);
+            
+            // Store tasks in IndexedDB for offline use
+            if (response.success && response.data.tasks) {
+                for (const task of response.data.tasks) {
+                    await DB.saveTask(task);
+                }
+            }
+            
+            return response;
+        } catch (error) {
+            console.error('Failed to get tasks:', error);
+            const tasks = await DB.getAllTasks();
+            return {
+                success: true,
+                data: {
+                    tasks: this.filterTasks(tasks, filter),
+                    total_pages: 1,
+                    has_next_page: false,
+                    has_previous_page: false
+                }
+            };
         }
-        
-        return this.request(endpoint);
     },
 
     async getTask(id) {
-        return this.request(`tasks/${id}`);
+        try {
+            if (!navigator.onLine) {
+                const task = await DB.getTask(id);
+                return { 
+                    success: true, 
+                    data: { 
+                        tasks: [task] 
+                    } 
+                };
+            }
+
+            return await this.request(`tasks/${id}`);
+        } catch (error) {
+            console.error('Failed to get task:', error);
+            // Fallback to local storage
+            const task = await DB.getTask(id);
+            return { 
+                success: true, 
+                data: { 
+                    tasks: [task] 
+                } 
+            };
+        }
+    },
+
+    filterTasks(tasks, filter) {
+        switch (filter) {
+            case 'complete':
+                return tasks.filter(task => task.completed === 'Y');
+            case 'incomplete':
+                return tasks.filter(task => task.completed === 'N');
+            default:
+                return tasks;
+        }
     },
 
     async createTask(taskData) {
-        const formattedData = {
-            ...taskData,
-            deadline: this.formatDateForAPI(taskData.deadline),
-            completed: taskData.completed || 'N'
-        };
-        console.log('Creating task with data:', formattedData);
-        return this.request('tasks', {
-            method: 'POST',
-            body: JSON.stringify(formattedData)
-        });
+        try {
+            // Always save locally first
+            const localSaveResult = await DB.saveTask(taskData);
+            
+            if (navigator.onLine) {
+                try {
+                    const response = await this.request('tasks', {
+                        method: 'POST',
+                        body: JSON.stringify(taskData)
+                    });
+
+                    if (response.success) {
+                        // Update local task with server response
+                        await DB.saveTask({
+                            ...response.data.task,
+                            syncStatus: 'synced'
+                        });
+                    }
+                    return response;
+                } catch (error) {
+                    console.error('Failed to sync with server:', error);
+                    return localSaveResult;
+                }
+            }
+
+            return localSaveResult;
+        } catch (error) {
+            console.error('Create task error:', error);
+            throw error;
+        }
     },
 
     async updateTask(id, taskData) {
-        const formattedData = {
-            ...taskData
-        };
-        if (taskData.deadline) {
-            formattedData.deadline = this.formatDateForAPI(taskData.deadline);
+        try {
+            // Always update locally first
+            await DB.saveTask({ ...taskData, id });
+
+            if (navigator.onLine) {
+                return await this.request(`tasks/${id}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify(taskData)
+                });
+            }
+
+            return {
+                success: true,
+                data: { message: 'Task updated locally' }
+            };
+        } catch (error) {
+            console.error('Update task error:', error);
+            throw error;
         }
-        return this.request(`tasks/${id}`, {
-            method: 'PATCH',
-            body: JSON.stringify(formattedData)
-        });
     },
 
     async deleteTask(id) {
-        return this.request(`tasks/${id}`, {
-            method: 'DELETE'
-        });
-    },
+        try {
+            // Always delete locally first
+            await DB.deleteTask(id);
 
-    async register(username, password, fullname) {
-        return this.request('users', {
-            method: 'POST',
-            body: JSON.stringify({
-                username,
-                password,
-                fullname: fullname || username
-            })
-        });
+            if (navigator.onLine) {
+                return await this.request(`tasks/${id}`, {
+                    method: 'DELETE'
+                });
+            }
+
+            return {
+                success: true,
+                data: { message: 'Task deleted locally' }
+            };
+        } catch (error) {
+            console.error('Delete task error:', error);
+            throw error;
+        }
     },
 
     async login(username, password) {
         try {
-            const response = await this.request('sessions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    username: username,
-                    password: password
-                })
-            });
+            if (navigator.onLine) {
+                const response = await this.request('sessions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username, password })
+                });
 
-            console.log('Login response:', response);
-            if (response.success && response.data) {
-                localStorage.setItem('accessToken', response.data.access_token);
-                localStorage.setItem('refreshToken', response.data.refresh_token);
-                localStorage.setItem('sessionId', response.data.session_id);
-                localStorage.setItem('username', username);
+                if (response.success && response.data) {
+                    await DB.saveUser({
+                        username,
+                        accessToken: response.data.access_token,
+                        refreshToken: response.data.refresh_token,
+                        sessionId: response.data.session_id
+                    });
+
+                    localStorage.setItem('accessToken', response.data.access_token);
+                    localStorage.setItem('refreshToken', response.data.refresh_token);
+                    localStorage.setItem('sessionId', response.data.session_id);
+                    localStorage.setItem('username', username);
+                }
+                return response;
+            } else {
+                const userData = await DB.getUser(username);
+                if (userData && userData.accessToken) {
+                    localStorage.setItem('accessToken', userData.accessToken);
+                    localStorage.setItem('username', username);
+                    return {
+                        success: true,
+                        data: {
+                            access_token: userData.accessToken,
+                            refresh_token: userData.refreshToken,
+                            session_id: userData.sessionId,
+                            offline: true
+                        }
+                    };
+                }
+                throw new Error('Cannot login offline without previous successful online login');
             }
-            return response;
         } catch (error) {
-            console.error('🚫 Login error:', error);
+            console.error('Login error:', error);
             throw error;
         }
     },
 
     async logout() {
         const sessionId = localStorage.getItem('sessionId');
-        if (sessionId) {
+        if (sessionId && navigator.onLine) {
             try {
                 await this.request(`sessions/${sessionId}`, {
                     method: 'DELETE'
