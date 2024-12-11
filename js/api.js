@@ -37,6 +37,104 @@ const API = {
         }
     },
 
+    async register(username, password) {
+        try {
+            if (navigator.onLine) {
+                const response = await this.request('users', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ 
+                        username, 
+                        password,
+                        fullname: username
+                    })
+                });
+
+                if (response.success) {
+                    await DB.saveUser({
+                        username,
+                        accessToken: null,
+                        refreshToken: null,
+                        sessionId: null
+                    });
+                }
+                return response;
+            } else {
+                throw new Error('Cannot register while offline');
+            }
+        } catch (error) {
+            console.error('Register error:', error);
+            throw error;
+        }
+    },
+
+    async login(username, password) {
+        try {
+            if (navigator.onLine) {
+                const response = await this.request('sessions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+
+                if (response.success && response.data) {
+                    await DB.saveUser({
+                        username,
+                        accessToken: response.data.access_token,
+                        refreshToken: response.data.refresh_token,
+                        sessionId: response.data.session_id
+                    });
+
+                    localStorage.setItem('accessToken', response.data.access_token);
+                    localStorage.setItem('refreshToken', response.data.refresh_token);
+                    localStorage.setItem('sessionId', response.data.session_id);
+                    localStorage.setItem('username', username);
+                }
+                return response;
+            } else {
+                const userData = await DB.getUser(username);
+                if (userData && userData.accessToken) {
+                    localStorage.setItem('accessToken', userData.accessToken);
+                    localStorage.setItem('username', username);
+                    return {
+                        success: true,
+                        data: {
+                            access_token: userData.accessToken,
+                            refresh_token: userData.refreshToken,
+                            session_id: userData.sessionId,
+                            offline: true
+                        }
+                    };
+                }
+                throw new Error('Cannot login offline without previous successful online login');
+            }
+        } catch (error) {
+            console.error('Login error:', error);
+            throw error;
+        }
+    },
+
+    async logout() {
+        const sessionId = localStorage.getItem('sessionId');
+        if (sessionId && navigator.onLine) {
+            try {
+                await this.request(`sessions/${sessionId}`, {
+                    method: 'DELETE'
+                });
+            } catch (error) {
+                console.error('Logout error:', error);
+            }
+        }
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('sessionId');
+        localStorage.removeItem('username');
+    },
+
     async getTasks(page = 1, filter = 'all') {
         try {
             if (!navigator.onLine) {
@@ -109,17 +207,6 @@ const API = {
                     tasks: [task] 
                 } 
             };
-        }
-    },
-
-    filterTasks(tasks, filter) {
-        switch (filter) {
-            case 'complete':
-                return tasks.filter(task => task.completed === 'Y');
-            case 'incomplete':
-                return tasks.filter(task => task.completed === 'N');
-            default:
-                return tasks;
         }
     },
 
@@ -199,69 +286,15 @@ const API = {
         }
     },
 
-    async login(username, password) {
-        try {
-            if (navigator.onLine) {
-                const response = await this.request('sessions', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ username, password })
-                });
-
-                if (response.success && response.data) {
-                    await DB.saveUser({
-                        username,
-                        accessToken: response.data.access_token,
-                        refreshToken: response.data.refresh_token,
-                        sessionId: response.data.session_id
-                    });
-
-                    localStorage.setItem('accessToken', response.data.access_token);
-                    localStorage.setItem('refreshToken', response.data.refresh_token);
-                    localStorage.setItem('sessionId', response.data.session_id);
-                    localStorage.setItem('username', username);
-                }
-                return response;
-            } else {
-                const userData = await DB.getUser(username);
-                if (userData && userData.accessToken) {
-                    localStorage.setItem('accessToken', userData.accessToken);
-                    localStorage.setItem('username', username);
-                    return {
-                        success: true,
-                        data: {
-                            access_token: userData.accessToken,
-                            refresh_token: userData.refreshToken,
-                            session_id: userData.sessionId,
-                            offline: true
-                        }
-                    };
-                }
-                throw new Error('Cannot login offline without previous successful online login');
-            }
-        } catch (error) {
-            console.error('Login error:', error);
-            throw error;
+    filterTasks(tasks, filter) {
+        switch (filter) {
+            case 'complete':
+                return tasks.filter(task => task.completed === 'Y');
+            case 'incomplete':
+                return tasks.filter(task => task.completed === 'N');
+            default:
+                return tasks;
         }
-    },
-
-    async logout() {
-        const sessionId = localStorage.getItem('sessionId');
-        if (sessionId && navigator.onLine) {
-            try {
-                await this.request(`sessions/${sessionId}`, {
-                    method: 'DELETE'
-                });
-            } catch (error) {
-                console.error('Logout error:', error);
-            }
-        }
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
-        localStorage.removeItem('sessionId');
-        localStorage.removeItem('username');
     },
 
     formatDateForAPI(dateString) {
