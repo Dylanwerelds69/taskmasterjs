@@ -116,3 +116,4 @@ async function syncTasks() {
         console.error('Failed to sync tasks:', error);
     }
 }
+    

@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Test Page</title>
+</head>
+
+<body>
+    <h1>Test Page</h1>
+    <div id="result"></div>
+
+    <script>
+        fetch('proxy.php')
+            .then(response => response.text())
+            .then(text => {
+                document.getElementById('result').textContent = text;
+            })
+            .catch(error => {
+                document.getElementById('result').textContent = 'Error: ' + error;
+            });
+    </script>
+</body>
+
+</html>

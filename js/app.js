@@ -18,7 +18,7 @@ class TaskmasterApp {
         // Service Worker registration
         if ('serviceWorker' in navigator) {
             try {
-                const registration = await navigator.serviceWorker.register('/github/taskmasterjs/sw.js');
+                const registration = await navigator.serviceWorker.register('/sw.js');
                 console.log('Service Worker registered:', registration);
 
                 // Request notification permission
@@ -33,7 +33,7 @@ class TaskmasterApp {
         // Initialize router
         Router.init();
 
-        // Setup offline/online detection
+        // Setup offline/online handling
         window.addEventListener('online', this.handleOnline.bind(this));
         window.addEventListener('offline', this.handleOffline.bind(this));
 
@@ -52,10 +52,9 @@ class TaskmasterApp {
         // Check initial online status
         if (!navigator.onLine) {
             this.handleOffline();
+        } else {
+            this.handleOnline();
         }
-
-        // Setup auto sync
-        this.setupAutoSync();
     }
 
     updateUsernameDisplay() {
@@ -66,31 +65,6 @@ class TaskmasterApp {
                 usernameDisplay.textContent = username;
             }
         }
-    }
-
-    setupAutoSync() {
-        // Handle online events
-        window.addEventListener('online', async () => {
-            this.handleOnline();
-            try {
-                await API.syncOfflineActions();
-                this.showNotification('All changes have been synchronized', 'success');
-            } catch (error) {
-                console.error('Sync failed:', error);
-                this.showNotification('Failed to sync some changes', 'error');
-            }
-        });
-
-        // Periodic sync check (every 5 minutes when online)
-        setInterval(async () => {
-            if (navigator.onLine && API.isAuthenticated()) {
-                try {
-                    await API.syncOfflineActions();
-                } catch (error) {
-                    console.error('Periodic sync failed:', error);
-                }
-            }
-        }, 5 * 60 * 1000);
     }
 
     async handleOffline() {
@@ -110,11 +84,24 @@ class TaskmasterApp {
         if (offlineIndicator) {
             offlineIndicator.classList.remove('visible');
         }
-        this.showNotification('You are back online. Syncing changes...', 'info');
+
+        try {
+            await API.syncOfflineActions();
+            this.showNotification('Back online! Changes have been synchronized.', 'success');
+            
+            if (window.location.pathname.includes('/tasks')) {
+                await TasksComponent.loadTasks();
+            }
+        } catch (error) {
+            console.error('Failed to sync changes:', error);
+            this.showNotification('Failed to sync some changes. Will try again later.', 'error');
+        }
     }
 
     showNotification(message, type = 'info') {
-        const container = document.getElementById('notification-container') || document.body;
+        const container = document.getElementById('notification-container');
+        if (!container) return;
+
         const notification = document.createElement('div');
         notification.className = `notification ${type}`;
         notification.textContent = message;
@@ -128,7 +115,6 @@ class TaskmasterApp {
 
         container.appendChild(notification);
 
-        // Auto remove after 5 seconds
         setTimeout(() => {
             if (notification.parentElement) {
                 notification.remove();
@@ -136,10 +122,12 @@ class TaskmasterApp {
         }, 5000);
 
         // Show system notification if app is in background
-        if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+        if ('Notification' in window && 
+            Notification.permission === 'granted' && 
+            document.hidden) {
             new Notification('Taskmaster', {
                 body: message,
-                icon: '/github/taskmasterjs/assets/icons/icon-192.png'
+                icon: '/assets/icons/icon-192.png'
             });
         }
     }

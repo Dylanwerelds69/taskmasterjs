@@ -1,95 +1,164 @@
-/* css/components/login.css */
+/* login.css */
 .login-container {
     max-width: 400px;
-    margin: 50px auto;
-    padding: 20px;
-    background: white;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin: 3rem auto;
+    padding: 2rem;
+    background: var(--surface);
+    border-radius: 1.5rem;
+    box-shadow: var(--shadow-lg);
+    border: 1px solid var(--border-color);
+    animation: slideUp 0.5s ease-out;
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .auth-tabs {
     display: flex;
-    margin-bottom: 20px;
-    border-bottom: 2px solid #eee;
+    margin-bottom: 2rem;
+    border-bottom: 2px solid var(--border-color);
+    gap: 1rem;
 }
 
 .tab-btn {
     flex: 1;
-    padding: 10px;
+    padding: 1rem;
     border: none;
     background: none;
     cursor: pointer;
-    font-size: 16px;
-    color: #666;
-    transition: all 0.3s ease;
+    font-size: 1rem;
+    color: var(--text-secondary);
+    transition: var(--transition-normal);
+    position: relative;
+}
+
+.tab-btn::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background: var(--primary-color);
+    transform: scaleX(0);
+    transition: transform 0.3s ease;
 }
 
 .tab-btn.active {
     color: var(--primary-color);
-    border-bottom: 2px solid var(--primary-color);
-    margin-bottom: -2px;
+    font-weight: 600;
+}
+
+.tab-btn.active::after {
+    transform: scaleX(1);
 }
 
 .auth-form {
     display: flex;
     flex-direction: column;
-    gap: 15px;
+    gap: 1.5rem;
 }
 
 .auth-form h2 {
-    margin-bottom: 20px;
-    color: #333;
+    margin-bottom: 1.5rem;
+    color: var(--text-primary);
     text-align: center;
+    font-size: 1.75rem;
+    font-weight: 700;
 }
 
 .form-group {
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: 0.5rem;
 }
 
 .form-group label {
     font-weight: 500;
-    color: #444;
+    color: var(--text-primary);
+    font-size: 0.875rem;
 }
 
 .form-group input {
-    padding: 10px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 16px;
+    padding: 0.75rem 1rem;
+    border: 1.5px solid var(--border-color);
+    border-radius: 0.75rem;
+    font-size: 1rem;
+    transition: var(--transition-normal);
+    color: var(--text-primary);
+    background: var(--surface);
 }
 
 .form-group input:focus {
-    border-color: var(--primary-color);
     outline: none;
-    box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary-color) 15%, transparent);
+}
+
+.form-group input::placeholder {
+    color: var(--text-tertiary);
 }
 
 .error-message {
     color: var(--error-color);
-    font-size: 14px;
+    font-size: 0.875rem;
+    padding: 0.75rem;
+    border-radius: 0.75rem;
+    background: color-mix(in srgb, var(--error-color) 10%, transparent);
     text-align: center;
-    padding: 5px;
+    animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
 }
 
-.btn-primary {
-    background: var(--primary-color);
-    color: white;
-    padding: 12px;
+@keyframes shake {
+    10%, 90% { transform: translateX(-1px); }
+    20%, 80% { transform: translateX(2px); }
+    30%, 50%, 70% { transform: translateX(-4px); }
+    40%, 60% { transform: translateX(4px); }
+}
+
+.login-footer {
+    margin-top: 2rem;
+    text-align: center;
+}
+
+.back-to-home {
+    padding: 0.75rem 1.5rem;
     border: none;
-    border-radius: 4px;
+    background: transparent;
+    color: var(--text-secondary);
     cursor: pointer;
-    font-size: 16px;
-    font-weight: 500;
-    transition: background 0.3s ease;
+    transition: var(--transition-normal);
+    font-size: 0.875rem;
 }
 
-.btn-primary:hover {
-    background: var(--secondary-color);
+.back-to-home:hover {
+    color: var(--primary-color);
 }
 
-.hidden {
-    display: none;
+@media (max-width: 768px) {
+    .login-container {
+        margin: 2rem 1rem;
+        padding: 1.5rem;
+    }
+
+    .auth-tabs {
+        gap: 0.5rem;
+    }
+
+    .tab-btn {
+        padding: 0.75rem;
+    }
+
+    .form-group input {
+        padding: 0.875rem;
+        font-size: 1rem;
+    }
 }

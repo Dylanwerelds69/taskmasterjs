@@ -1,5 +1,5 @@
 const Router = {
-    basePath: '/github/taskmasterjs',
+    basePath: '',
 
     init() {
         this.handleNavigation();
@@ -17,49 +17,55 @@ const Router = {
     },
 
     navigate(path) {
-        const fullPath = `${this.basePath}${path}`;
-        history.pushState(null, '', fullPath);
+        if (!path.startsWith('/')) {
+            path = '/' + path;
+        }
+        history.pushState(null, '', path);
         this.handleNavigation();
     },
 
     async handleNavigation() {
-        const currentPath = window.location.pathname;
-        const path = currentPath.replace(this.basePath, '') || '/';
+        const path = window.location.pathname;
         const isAuthenticated = API.isAuthenticated();
 
         // Update active navigation state
         this.updateActiveNavigation(path);
 
-        switch(path) {
-            case '/':
-                // Always show home page first when accessing root URL
-                await HomeComponent.render();
-                break;
+        try {
+            switch(path) {
+                case '/':
+                    await HomeComponent.render();
+                    break;
 
-            case '/login':
-                if (isAuthenticated) {
-                    this.navigate('/tasks');
-                    return;
-                }
-                await LoginComponent.render();
-                break;
+                case '/login':
+                    if (isAuthenticated) {
+                        this.navigate('/tasks');
+                        return;
+                    }
+                    await LoginComponent.render();
+                    break;
 
-            case '/tasks':
-                if (!isAuthenticated) {
-                    this.navigate('/login');
-                    return;
-                }
-                await TasksComponent.render();
-                break;
+                case '/tasks':
+                    if (!isAuthenticated) {
+                        this.navigate('/login');
+                        return;
+                    }
+                    await TasksComponent.render();
+                    break;
 
-            case '/home':
-                await HomeComponent.render();
-                break;
+                case '/home':
+                    await HomeComponent.render();
+                    break;
 
-            default:
-                // For unknown routes, redirect to home instead of tasks
-                this.navigate('/');
-                break;
+                default:
+                    // For unknown routes, redirect to home
+                    this.navigate('/');
+                    break;
+            }
+        } catch (error) {
+            console.error('Navigation error:', error);
+            // If there's an error during navigation, return to home
+            this.navigate('/');
         }
     },
 

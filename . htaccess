@@ -1,17 +1,28 @@
+# Enable rewrite engine
 RewriteEngine On
-RewriteBase /github/taskmasterjs/
+RewriteBase /
 
-# Exclude existing files and directories from rewrite
+# Forward Authorization header
+RewriteCond %{HTTP:Authorization} ^(.*)
+RewriteRule .* - [e=HTTP_AUTHORIZATION:%1]
+
+# Allow direct access to actual files and directories
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 
-# Rewrite all other requests to index.html
+# Handle API requests
+RewriteRule ^proxy.php(.*)$ proxy.php [QSA,L]
+
+# All other routes go to index.html
 RewriteRule ^(.*)$ index.html [L]
 
-# Prevent directory listing
-Options -Indexes
+# Enable CORS
+Header set Access-Control-Allow-Origin "*"
+Header set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+Header set Access-Control-Allow-Headers "Content-Type, Authorization"
 
-# Set security headers
-Header set X-Content-Type-Options "nosniff"
-Header set X-Frame-Options "SAMEORIGIN"
-Header set X-XSS-Protection "1; mode=block"
+# Handle PHP files
+AddHandler application/x-httpd-php .php
+
+# Security headers
+Header set X-

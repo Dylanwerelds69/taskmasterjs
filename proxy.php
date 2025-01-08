@@ -1,94 +1,113 @@
 <?php
 
+// Enable error reporting for debugging
 error_reporting(E_ALL);
-ini_set('display_errors', 0); // Disable HTML error output
+ini_set('display_errors', 1);
 
-function Dlog($str)
-{
-    $logFile = __DIR__ . '/proxy.log';
-    $timestamp = date('Y-m-d H:i:s');
-    file_put_contents($logFile, "[$timestamp] $str\n", FILE_APPEND);
+// Set headers
+header('Content-Type: application/json');
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS, PATCH');
+header('Access-Control-Allow-Headers: Content-Type, Authorization');
+
+// Handle preflight requests
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit();
 }
 
 try {
-    // CORS headers
-    header('Content-Type: application/json');
-    header('Access-Control-Allow-Origin: *');
-    header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-    header('Access-Control-Allow-Headers: Content-Type, Authorization');
-
-    // Debug logging
-    Dlog("Proxy request received: " . $_SERVER['REQUEST_METHOD']);
-
-    // Handle preflight requests
-    if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-        http_response_code(200);
-        exit();
-    }
-
-    // Get target URL from query parameter
-    $target_url = isset($_GET['csurl']) ? $_GET['csurl'] : null;
-    if (!$target_url) {
+    // Get the target URL
+    $csurl = isset($_GET['csurl']) ? $_GET['csurl'] : '';
+    if (empty($csurl)) {
         throw new Exception('No target URL specified');
     }
 
-    // Log the actual URL being called
-    Dlog("Forwarding to: " . $target_url);
-    $target_url = 'https://myriad-manifestation.nl/v1' . $target_url;
+    // Ensure URL starts with slash
+    if (strpos($csurl, '/') !== 0) {
+        $csurl = '/' . $csurl;
+    }
 
-    // Get the request body
-    $body = file_get_contents('php://input');
-    Dlog("Request body: " . $body);
+    $api_url = 'https://myriad-manifestation.nl/v1' . $csurl;
+    $rawBody = file_get_contents('php://input');
 
-    // Initialize cURL
-    $ch = curl_init($target_url);
-    if ($ch === false) {
+    // Debug logging
+    error_log("API URL: " . $api_url);
+    error_log("Raw Body: " . $rawBody);
+
+    $ch = curl_init($api_url);
+    if (!$ch) {
         throw new Exception('Failed to initialize cURL');
     }
 
-    // Set cURL options
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $_SERVER['REQUEST_METHOD']);
-    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+    // Start with basic headers
+    $headers = ['Content-Type: application/json'];
 
-    // Forward the request body for POST/PUT/PATCH
-    if (in_array($_SERVER['REQUEST_METHOD'], ['POST', 'PUT', 'PATCH']) && !empty($body)) {
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
-    }
-
-    // Forward headers
-    $headers = getallheaders();
-    $forward_headers = [];
-    foreach ($headers as $name => $value) {
-        if (strtolower($name) !== 'host') {
-            $forward_headers[] = "$name: $value";
+    // Get Authorization header
+    $authHeader = null;
+    if (isset($_SERVER['HTTP_AUTHORIZATION'])) {
+        $authHeader = $_SERVER['HTTP_AUTHORIZATION'];
+    } elseif (isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+        $authHeader = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+    } else {
+        $allHeaders = getallheaders();
+        if (isset($allHeaders['Authorization'])) {
+            $authHeader = $allHeaders['Authorization'];
         }
     }
-    curl_setopt($ch, CURLOPT_HTTPHEADER, $forward_headers);
 
-    // Execute request
-    $response = curl_exec($ch);
-    if ($response === false) {
-        throw new Exception('cURL error: ' . curl_error($ch));
+    // Debug logging
+    error_log("Auth Header: " . ($authHeader ?? 'none'));
+
+    // Add Authorization header if present
+    if ($authHeader) {
+        $headers[] = 'Authorization: ' . $authHeader;
     }
 
-    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    Dlog("API Response code: " . $http_code);
-    Dlog("API Response: " . $response);
+    // Debug logging
+    error_log("Request Headers: " . print_r($headers, true));
 
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_CUSTOMREQUEST => $_SERVER['REQUEST_METHOD'],
+        CURLOPT_POSTFIELDS => $rawBody,
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
+        CURLOPT_VERBOSE => true
+    ]);
+
+    // Debug logging for cURL
+    $verbose = fopen('php://temp', 'w+');
+    curl_setopt($ch, CURLOPT_STDERR, $verbose);
+
+    $response = curl_exec($ch);
+
+    // Debug logging
+    error_log("cURL Response: " . $response);
+
+    if (curl_errno($ch)) {
+        throw new Exception('cURL Error: ' . curl_error($ch));
+    }
+
+    // Get verbose debug information
+    rewind($verbose);
+    $verboseLog = stream_get_contents($verbose);
+    error_log("Verbose log: " . $verboseLog);
+
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
-    // Forward response code and body
-    http_response_code($http_code);
+    // Set the same status code
+    http_response_code($httpCode);
     echo $response;
 
 } catch (Exception $e) {
-    Dlog("ERROR: " . $e->getMessage());
+    error_log("Proxy Error: " . $e->getMessage());
     http_response_code(500);
     echo json_encode([
         'success' => false,
-        'message' => 'Proxy error: ' . $e->getMessage()
+        'message' => $e->getMessage()
     ]);
 }

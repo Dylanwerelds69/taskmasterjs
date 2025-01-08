@@ -1,4 +1,4 @@
-const TasksComponent = {
+window.TasksComponent = {
     currentPage: 1,
     currentFilter: 'all',
 
@@ -59,48 +59,62 @@ const TasksComponent = {
 
         await this.loadTasks();
         this.attachEventListeners();
+
+        // Add online/offline event listeners
+        window.addEventListener('online', () => this.handleOnlineStatus(true));
+        window.addEventListener('offline', () => this.handleOnlineStatus(false));
     },
 
     async loadTasks() {
         try {
             const response = await API.getTasks(this.currentPage, this.currentFilter);
             const taskList = document.querySelector('.task-list');
-
+            if (!taskList) return;
+    
             if (!response.data.tasks.length) {
                 taskList.innerHTML = '<p class="no-tasks">No tasks found. Click the + button to create your first task!</p>';
                 return;
             }
-
-            taskList.innerHTML = response.data.tasks.map(task => `
-                <div class="task-item ${task.completed === 'Y' ? 'completed' : ''}" data-id="${task.id}">
-                    <div class="task-content">
-                        <div class="task-header">
-                            <h3>${this.escapeHtml(task.title)}</h3>
-                            <span class="deadline ${this.isOverdue(task.deadline) ? 'overdue' : ''}">
-                                ${task.deadline}
-                            </span>
-                        </div>
-                        <p class="task-description">${this.escapeHtml(task.description)}</p>
-                    </div>
-                    <div class="task-controls">
-                        <button class="edit-task" title="Edit">Edit</button>
-                        <button class="delete-task" title="Delete">Delete</button>
-                        <label class="checkbox-container" title="${task.completed === 'Y' ? 'Mark as incomplete' : 'Mark as complete'}">
-                            <input type="checkbox" class="task-complete" ${task.completed === 'Y' ? 'checked' : ''}>
-                            <span class="checkmark"></span>
-                        </label>
-                    </div>
-                </div>
-            `).join('');
-
-            // Only show pagination for 'all' filter
-            if (this.currentFilter === 'all') {
+    
+            // Get active tasks only
+            const activeTasks = response.data.tasks.filter(task => !task.deleted);
+            
+            // Remove duplicates based on content
+            const uniqueTasks = activeTasks.reduce((acc, current) => {
+                const exists = acc.find(item => 
+                    item.title === current.title && 
+                    item.description === current.description &&
+                    item.deadline === current.deadline
+                );
+                if (!exists) {
+                    return [...acc, current];
+                }
+                return acc;
+            }, []);
+    
+            // Sort tasks by deadline
+            uniqueTasks.sort((a, b) => {
+                const dateA = new Date(a.deadline.split(' ')[0].split('/').reverse().join('/'));
+                const dateB = new Date(b.deadline.split(' ')[0].split('/').reverse().join('/'));
+                return dateA - dateB;
+            });
+    
+            taskList.innerHTML = uniqueTasks.map(task => this.createTaskHTML(task)).join('');
+    
+            if (this.currentFilter === 'all' && navigator.onLine) {
                 this.renderPagination(response.data);
             } else {
-                document.querySelector('.pagination').innerHTML = '';
+                const pagination = document.querySelector('.pagination');
+                if (pagination) {
+                    pagination.innerHTML = '';
+                }
             }
         } catch (error) {
             console.error('Failed to load tasks:', error);
+            const taskList = document.querySelector('.task-list');
+            if (taskList) {
+                taskList.innerHTML = '<p class="error">Failed to load tasks. Please try again.</p>';
+            }
         }
     },
 
@@ -127,36 +141,60 @@ const TasksComponent = {
         
         try {
             const response = await API.getTask(taskId);
-            const task = response.data.tasks[0];
+            if (response && response.success && response.data && response.data.tasks && response.data.tasks[0]) {
+                const task = response.data.tasks[0];
 
-            document.getElementById('task-title').value = task.title;
-            document.getElementById('task-description').value = task.description;
-            
-            // Parse and format the date
-            const [datePart, timePart] = task.deadline.split(' ');
-            const [day, month, year] = datePart.split('/');
-            const formattedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${timePart}`;
-            
-            document.getElementById('task-deadline').value = formattedDate;
-            document.getElementById('task-completed').checked = task.completed === 'Y';
-            
-            form.dataset.taskId = taskId;
-            modal.classList.remove('hidden');
+                document.getElementById('task-title').value = task.title || '';
+                document.getElementById('task-description').value = task.description || '';
+                
+                if (task.deadline) {
+                    const [datePart, timePart] = task.deadline.split(' ');
+                    const [day, month, year] = datePart.split('/');
+                    const formattedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${timePart}`;
+                    document.getElementById('task-deadline').value = formattedDate;
+                }
+                
+                document.getElementById('task-completed').checked = task.completed === 'Y';
+                form.dataset.taskId = taskId;
+                modal.classList.remove('hidden');
+            }
         } catch (error) {
             console.error('Failed to load task:', error);
+            if (window.app) {
+                window.app.showNotification('Failed to load task. Please try again.', 'error');
+            }
+        }
+    },
+
+    async handleOnlineStatus(isOnline) {
+        if (isOnline) {
+            await this.syncAndRefresh();
+        }
+    },
+
+    async syncAndRefresh() {
+        try {
+            await API.syncOfflineActions();
+            await this.loadTasks();
+        } catch (error) {
+            console.error('Failed to sync tasks:', error);
         }
     },
 
     attachEventListeners() {
         // Add task button
         const addBtn = document.querySelector('.add-task-btn');
-        addBtn.addEventListener('click', () => this.showAddTaskModal());
+        if (addBtn) {
+            addBtn.addEventListener('click', () => this.showAddTaskModal());
+        }
 
         // Modal close button
         const closeBtn = document.querySelector('.modal .close');
-        closeBtn.addEventListener('click', () => {
-            document.getElementById('task-modal').classList.add('hidden');
-        });
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                document.getElementById('task-modal').classList.add('hidden');
+            });
+        }
 
         // Cancel button
         const cancelBtn = document.querySelector('.cancel-btn');
@@ -170,81 +208,109 @@ const TasksComponent = {
         const statusFilter = document.getElementById('status-filter');
         if (statusFilter) {
             statusFilter.addEventListener('change', async (e) => {
-                const filterValue = e.target.value;
-                console.log('Filter changed to:', filterValue);
-                this.currentFilter = filterValue;
-                this.currentPage = 1; // Reset to first page
+                this.currentFilter = e.target.value;
+                this.currentPage = 1;
                 await this.loadTasks();
             });
         }
 
         // Task form submission
         const form = document.getElementById('task-form');
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-
-            const dateInput = document.getElementById('task-deadline').value;
-            const date = new Date(dateInput);
-            const formattedDate = date.toLocaleString('en-GB', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: false
-            }).replace(',', '');
-
-            const taskData = {
-                title: document.getElementById('task-title').value.trim(),
-                description: document.getElementById('task-description').value.trim(),
-                deadline: formattedDate,
-                completed: document.getElementById('task-completed').checked ? 'Y' : 'N'
-            };
-
-            try {
+        if (form) {
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
                 const taskId = form.dataset.taskId;
-                if (taskId) {
-                    await API.updateTask(taskId, taskData);
-                } else {
-                    await API.createTask(taskData);
-                }
-                document.getElementById('task-modal').classList.add('hidden');
-                await this.loadTasks();
-            } catch (error) {
-                console.error('Failed to save task:', error);
-            }
-        });
+                const taskData = {
+                    title: document.getElementById('task-title').value.trim(),
+                    description: document.getElementById('task-description').value.trim(),
+                    deadline: document.getElementById('task-deadline').value,
+                    completed: document.getElementById('task-completed').checked ? 'Y' : 'N'
+                };
 
-        // Task list event delegation
-        document.querySelector('.task-list').addEventListener('click', async (e) => {
-            const taskItem = e.target.closest('.task-item');
-            if (!taskItem) return;
-            
-            const taskId = taskItem.dataset.id;
-            
-            if (e.target.closest('.edit-task')) {
-                await this.showEditTaskModal(taskId);
-            } else if (e.target.closest('.delete-task')) {
-                if (confirm('Are you sure you want to delete this task?')) {
-                    try {
-                        await API.deleteTask(taskId);
-                        await this.loadTasks();
-                    } catch (error) {
-                        console.error('Failed to delete task:', error);
-                    }
-                }
-            } else if (e.target.classList.contains('task-complete')) {
                 try {
-                    await API.updateTask(taskId, {
-                        completed: e.target.checked ? 'Y' : 'N'
-                    });
+                    if (taskId) {
+                        // Get existing task first
+                        const existingTask = await DB.getTask(taskId);
+                        if (existingTask) {
+                            // Update while preserving the original ID
+                            await API.updateTask(taskId, {
+                                ...taskData,
+                                id: taskId
+                            });
+                        }
+                    } else {
+                        await API.createTask(taskData);
+                    }
+                    document.getElementById('task-modal').classList.add('hidden');
                     await this.loadTasks();
                 } catch (error) {
-                    console.error('Failed to update task:', error);
-                    e.target.checked = !e.target.checked; // Revert checkbox if update failed
+                    console.error('Failed to save task:', error);
                 }
-            }
-        });
+            });
+        }
+
+        // Task list event delegation
+        const taskList = document.querySelector('.task-list');
+        if (taskList) {
+            taskList.addEventListener('click', async (e) => {
+                const taskItem = e.target.closest('.task-item');
+                if (!taskItem) return;
+                
+                const taskId = taskItem.dataset.id;
+                
+                if (e.target.closest('.edit-task')) {
+                    await this.showEditTaskModal(taskId);
+                } else if (e.target.closest('.delete-task')) {
+                    if (confirm('Are you sure you want to delete this task?')) {
+                        try {
+                            await API.deleteTask(taskId);
+                            await this.loadTasks();
+                        } catch (error) {
+                            console.error('Failed to delete task:', error);
+                        }
+                    }
+                } else if (e.target.classList.contains('task-complete')) {
+                    try {
+                        const task = await DB.getTask(taskId);
+                        if (task) {
+                            await API.updateTask(taskId, {
+                                ...task,
+                                completed: e.target.checked ? 'Y' : 'N'
+                            });
+                            await this.loadTasks();
+                        }
+                    } catch (error) {
+                        console.error('Failed to update task:', error);
+                        e.target.checked = !e.target.checked;
+                    }
+                }
+            });
+        }
+    },
+
+    createTaskHTML(task) {
+        return `
+            <div class="task-item ${task.completed === 'Y' ? 'completed' : ''} ${task.syncStatus === 'pending' ? 'pending-sync' : ''}" data-id="${task.id}">
+                <div class="task-content">
+                    <div class="task-header">
+                        <h3>${this.escapeHtml(task.title)}</h3>
+                        <span class="deadline ${this.isOverdue(task.deadline) ? 'overdue' : ''}">
+                            ${task.deadline}
+                        </span>
+                    </div>
+                    <p class="task-description">${this.escapeHtml(task.description)}</p>
+                    ${task.syncStatus === 'pending' ? '<span class="sync-status">Pending sync</span>' : ''}
+                </div>
+                <div class="task-controls">
+                    <button class="edit-task" title="Edit">Edit</button>
+                    <button class="delete-task" title="Delete">Delete</button>
+                    <label class="checkbox-container" title="${task.completed === 'Y' ? 'Mark as incomplete' : 'Mark as complete'}">
+                        <input type="checkbox" class="task-complete" ${task.completed === 'Y' ? 'checked' : ''}>
+                        <span class="checkmark"></span>
+                    </label>
+                </div>
+            </div>
+        `;
     },
 
     escapeHtml(text) {
