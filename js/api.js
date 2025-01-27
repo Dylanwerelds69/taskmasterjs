@@ -1,15 +1,20 @@
 const API = {
     BASE_URL: 'http://taskmasterjs.localhost/proxy.php',
+    tokenRefreshTimeout: null,
 
-    async request(endpoint, options = {}) {
+    async request(endpoint, options = {}, isRefreshing = false) {
         if (!endpoint.startsWith('/')) {
             endpoint = '/' + endpoint;
         }
 
         const accessToken = localStorage.getItem('accessToken');
-        const isAuthRoute = endpoint === '/users' || endpoint.startsWith('/sessions');
+        const isAuthRoute = endpoint === '/users' || 
+                          endpoint.startsWith('/sessions') || 
+                          endpoint === '/sessions/refresh';
 
-        if (!accessToken && !isAuthRoute) {
+
+
+        if (!accessToken && !isAuthRoute && !isRefreshing) {
             Router.navigate('/login');
             throw new Error('Not authenticated');
         }
@@ -34,30 +39,196 @@ const API = {
                 }
             });
 
-            const responseText = await response.text();
-            console.log('Raw response:', responseText);
+            console.log('response status is ' + response.status);
+            console.log('is auth route ' + isAuthRoute);
 
-            let responseData;
-            try {
-                responseData = JSON.parse(responseText);
-            } catch (e) {
-                console.error('Failed to parse response:', responseText);
-                throw new Error('Invalid JSON response from server');
-            }
-
-            if (!response.ok) {
-                if (response.status === 401) {
+            // If we get a 401 and it's not an auth route, try to refresh the token
+            if (response.status === 401 && !isAuthRoute) {
+                try {
+                    const newToken = await this.refreshAccessToken();
+                    // Retry the original request with the new token
+                    headers['Authorization'] = newToken;
+                    const retryResponse = await fetch(url, {
+                        ...options,
+                        headers: {
+                            ...headers,
+                            ...options.headers
+                        }
+                    });
+                    return await this.handleResponse(retryResponse);
+                } catch (refreshError) {
                     localStorage.removeItem('accessToken');
                     Router.navigate('/login');
+                    throw refreshError;
                 }
-                throw new Error(responseData.message || `HTTP error! status: ${response.status}`);
             }
 
-            return responseData;
+            return await this.handleResponse(response);
         } catch (error) {
             console.error('API Error:', error);
             throw error;
         }
+    },
+
+    async handleResponse(response) {
+        const responseText = await response.text();
+        let responseData;
+        
+        try {
+            responseData = JSON.parse(responseText);
+        } catch (e) {
+            console.error('Failed to parse response:', responseText);
+            throw new Error('Invalid JSON response from server');
+        }
+
+        if (!response.ok) {
+            throw new Error(responseData.message || `HTTP error! status: ${response.status}`);
+        }
+
+        return responseData;
+    },
+
+    async refreshAccessToken() {
+        const accessToken = localStorage.getItem('accessToken');
+        const refreshToken = localStorage.getItem('refreshToken');
+        const sessionId = localStorage.getItem('sessionId');
+        const username = localStorage.getItem('username');
+    
+        if (!refreshToken || !sessionId || !username) {
+            throw new Error('Missing authentication data');
+        }
+    
+        try {
+            const url = `${this.BASE_URL}?csurl=/sessions/${sessionId}`;
+            console.log('Refreshing session at:', url);
+    
+            const headers = {
+                'Content-Type': 'application/json'
+            };
+    
+            // if (accessToken && !isAuthRoute) {
+                headers['Authorization'] = accessToken;
+            // }
+            // headers['Authorization'] = accessToken;
+            
+            const response = await fetch(url, {
+                method: 'PATCH',
+                headers: {
+                    ...headers
+                },
+                body: JSON.stringify({ 
+                    refresh_token: refreshToken
+                })
+            });
+    
+            const responseText = await response.text();
+            let responseData;
+            
+            try {
+                responseData = JSON.parse(responseText);
+            } catch (e) {
+                console.error('Failed to parse refresh response:', responseText);
+                throw new Error('Invalid JSON response from server during refresh');
+            }
+    
+            if (!response.ok) {
+                // Clear the refresh timeout to prevent loops
+                if (this.tokenRefreshTimeout) {
+                    clearTimeout(this.tokenRefreshTimeout);
+                    this.tokenRefreshTimeout = null;
+                }
+                await this.logout();
+                throw new Error(responseData.message || `Refresh failed with status: ${response.status}`);
+            }
+    
+            if (responseData.success) {
+                // Save the new tokens from the response
+                const newAccessToken = responseData.data.access_token;
+                const newRefreshToken = responseData.data.refresh_token;
+                
+                // Update localStorage with new tokens
+                localStorage.setItem('accessToken', newAccessToken);
+                localStorage.setItem('refreshToken', newRefreshToken);
+                
+                // Update DB to ensure offline functionality remains intact
+                await DB.saveUser({
+                    username,
+                    accessToken: newAccessToken,
+                    refreshToken: newRefreshToken,
+                    sessionId
+                });
+    
+                // Schedule next refresh for 5 minutes
+                this.scheduleTokenRefresh(300); // 5 minutes
+    
+                return newAccessToken;
+            }else {
+                await this.logout();
+            }
+            throw new Error('Failed to refresh session');
+        } catch (error) {
+            // Clear the refresh timeout to prevent loops
+            if (this.tokenRefreshTimeout) {
+                clearTimeout(this.tokenRefreshTimeout);
+                this.tokenRefreshTimeout = null;
+            }
+            console.error('Session refresh failed:', error);
+            await this.logout();
+            throw error;
+        }
+    },
+    
+    scheduleTokenRefresh(expiresIn) {
+        // Clear any existing timeout
+        if (this.tokenRefreshTimeout) {
+            clearTimeout(this.tokenRefreshTimeout);
+            this.tokenRefreshTimeout = null;
+        }
+    
+        // Ensure we have a valid time
+        const refreshTime = Math.max(60, expiresIn) * 1000; // Minimum 1 minute, convert to milliseconds
+        console.log(`Scheduling next refresh in ${refreshTime/1000} seconds`);
+        
+        this.tokenRefreshTimeout = setTimeout(async () => {
+            try {
+                await this.refreshAccessToken();
+                console.log('Session refreshed successfully');
+            } catch (error) {
+                console.error('Failed to refresh session:', error);
+                // Don't call logout here as refreshAccessToken already handles that
+            }
+        }, refreshTime);
+    },
+    async testRefreshToken() {
+        console.log('Manually triggering token refresh...');
+        try {
+            const newToken = await this.refreshAccessToken();
+            console.log('Manual refresh successful! New token received');
+            return newToken;
+        } catch (error) {
+            console.error('Manual refresh failed:', error);
+            throw error;
+        }
+    },
+    
+    scheduleTokenRefresh(expiresIn) {
+        if (this.tokenRefreshTimeout) {
+            clearTimeout(this.tokenRefreshTimeout);
+        }
+    
+        // Schedule refresh 1 minute before expiration
+        const refreshTime = (expiresIn - 60) * 1000;
+        console.log('Scheduling next refresh in', refreshTime/1000, 'seconds');
+        
+        this.tokenRefreshTimeout = setTimeout(async () => {
+            try {
+                await this.refreshAccessToken();
+                console.log('Session refreshed successfully');
+            } catch (error) {
+                console.error('Failed to refresh session:', error);
+                await this.logout();
+            }
+        }, refreshTime);
     },
 
     async register(username, password) {
@@ -94,19 +265,24 @@ const API = {
             });
 
             if (response.success && response.data) {
-                const accessToken = response.data.access_token;
+                const { access_token, refresh_token, session_id, expires_in } = response.data;
 
                 await DB.saveUser({
                     username,
-                    accessToken,
-                    refreshToken: response.data.refresh_token,
-                    sessionId: response.data.session_id
+                    accessToken: access_token,
+                    refreshToken: refresh_token,
+                    sessionId: session_id
                 });
 
-                localStorage.setItem('accessToken', accessToken);
-                localStorage.setItem('refreshToken', response.data.refresh_token);
-                localStorage.setItem('sessionId', response.data.session_id);
+                localStorage.setItem('accessToken', access_token);
+                localStorage.setItem('refreshToken', refresh_token);
+                localStorage.setItem('sessionId', session_id);
                 localStorage.setItem('username', username);
+
+                // Schedule token refresh
+                if (expires_in) {
+                    this.scheduleTokenRefresh(expires_in);
+                }
             }
             return response;
         } catch (error) {
@@ -116,6 +292,12 @@ const API = {
     },
 
     async logout() {
+        // Clear token refresh timeout
+        if (this.tokenRefreshTimeout) {
+            clearTimeout(this.tokenRefreshTimeout);
+            this.tokenRefreshTimeout = null;
+        }
+
         const sessionId = localStorage.getItem('sessionId');
         if (sessionId) {
             try {

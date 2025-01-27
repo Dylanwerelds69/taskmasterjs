@@ -28,7 +28,7 @@ try {
         $csurl = '/' . $csurl;
     }
 
-    $api_url = 'https://myriad-manifestation.nl/v1' . $csurl;
+    $api_url = 'https://pmarcelis.mid-ica.nl/v1' . $csurl;
     $rawBody = file_get_contents('php://input');
 
     // Debug logging
@@ -36,6 +36,7 @@ try {
     error_log("Raw Body: " . $rawBody);
 
     $ch = curl_init($api_url);
+
     if (!$ch) {
         throw new Exception('Failed to initialize cURL');
     }
@@ -98,6 +99,16 @@ try {
 
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
+
+    // If it's a login or token refresh response, modify it to include expiration time
+    // if ($csurl === '/sessions' || $csurl === '/sessions/') {
+    //     $responseData = json_decode($response, true);
+    //     if ($responseData && isset($responseData['success']) && $responseData['success']) {
+    //         // Add expires_in field (20 minutes for access token)
+    //         $responseData['data']['expires_in'] = 1200; // 20 minutes in seconds
+    //         $response = json_encode($responseData);
+    //     }
+    // }
 
     // Set the same status code
     http_response_code($httpCode);

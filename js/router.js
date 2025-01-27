@@ -1,11 +1,11 @@
+// Router.js
 const Router = {
     basePath: '',
-
+    
     init() {
         this.handleNavigation();
         window.addEventListener('popstate', () => this.handleNavigation());
         
-        // Add click event listener for navigation links
         document.addEventListener('click', (e) => {
             const link = e.target.closest('a');
             if (link && link.href.startsWith(window.location.origin)) {
@@ -28,7 +28,6 @@ const Router = {
         const path = window.location.pathname;
         const isAuthenticated = API.isAuthenticated();
 
-        // Update active navigation state
         this.updateActiveNavigation(path);
 
         try {
@@ -45,6 +44,14 @@ const Router = {
                     await LoginComponent.render();
                     break;
 
+                case '/register':
+                    if (isAuthenticated) {
+                        this.navigate('/tasks');
+                        return;
+                    }
+                    await RegisterComponent.render();
+                    break;
+
                 case '/tasks':
                     if (!isAuthenticated) {
                         this.navigate('/login');
@@ -53,32 +60,57 @@ const Router = {
                     await TasksComponent.render();
                     break;
 
+                case '/add-task':
+                    if (!isAuthenticated) {
+                        this.navigate('/login');
+                        return;
+                    }
+                    await AddTaskComponent.render();
+                    break;
+
+                case '/edit-task':
+                    if (!isAuthenticated) {
+                        this.navigate('/login');
+                        return;
+                    }
+                    await EditTaskComponent.render();
+                    break;
+
+                case '/profile':
+                    if (!isAuthenticated) {
+                        this.navigate('/login');
+                        return;
+                    }
+                    await ProfileComponent.render();
+                    break;
+
                 case '/home':
                     await HomeComponent.render();
                     break;
 
                 default:
-                    // For unknown routes, redirect to home
-                    this.navigate('/');
+                    if (path.startsWith('/api/') || path.startsWith('/sessions/')) {
+                        return;
+                    }
+                    await NotFoundComponent.render();
                     break;
             }
         } catch (error) {
             console.error('Navigation error:', error);
-            // If there's an error during navigation, return to home
             this.navigate('/');
         }
     },
 
     updateActiveNavigation(path) {
-        // Remove active class from all nav links
         document.querySelectorAll('.nav-link').forEach(link => {
             link.classList.remove('active');
         });
 
-        // Add active class to current path's link
         const activeLink = document.querySelector(`.nav-link[href="${path}"]`);
         if (activeLink) {
             activeLink.classList.add('active');
         }
     }
 };
+
+export default Router;
